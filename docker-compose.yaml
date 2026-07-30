@@ -21,7 +21,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}
+      DATABASE_URL: postgresql+asyncpg://${DATABASE_USER}:${DATABSE_PASSWORD}@db:5432/${DATSBASE_NAME}
       PYTHONUNBUFFERED: 1
 
 volumes:
