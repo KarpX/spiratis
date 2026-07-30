@@ -11,6 +11,8 @@ class SettingsButtons(Enum):
     PLATFORM = "🎮 Платформа"
     TYPE = "📁 Тип"
     DEACTIVATE = "❌ Выключить"
+    ACTIVATE = "✅ Включить"
+    TIMEZONE = "🕓 Часовой пояс"
     BACK = "🔙 Назад"
 
 
@@ -38,7 +40,7 @@ class PlatformSettingsButtons(Enum):
     # ITCHIO = {"text": "itch.io", "callback_data": "toggle:platform:itchio"}
 
 
-SETTINGS ={
+SETTINGS = {
     "platform" : {
         "steam": PlatformSettingsButtons.STEAM.value,
         "epic_games": PlatformSettingsButtons.EPIC_GAMES.value,

@@ -18,6 +18,7 @@ class User(Base):
         "device": []
     })
     is_active: Mapped[bool] = mapped_column(default=True)
+    timezone_offset: Mapped[int] = mapped_column(default=0)
 
 
 class SentGame(Base):
