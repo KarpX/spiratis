@@ -21,6 +21,6 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.PORT }}
           script: |
-            cd /root/spiratis  # Путь к папке бота на сервере
+            cd /home/karpx/spiratis
             git pull origin main
             docker-compose up -d --build
