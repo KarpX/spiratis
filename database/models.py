@@ -27,6 +27,7 @@ class SentGame(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(BigInteger)
     game_id: Mapped[int] = mapped_column(Integer)
+    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     sent_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         server_default=func.now()
