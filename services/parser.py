@@ -10,7 +10,7 @@ class GamerPowerAPI:
     async def get_giveaways(cls, platform: str = None, type: str = None):
         """
         Получает список раздач с GamerPower.
-        :param platform: Платформа (pc, steam, epic-games-store, ubisoft, origin)
+        :param platform: Платформа (pc, steam, epic-games-store)
         :return: Список словарей с данными о играх или None в случае ошибки
         """
         params = {}

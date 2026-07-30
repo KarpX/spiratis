@@ -14,27 +14,27 @@ class SettingsButtons(Enum):
 
 
 class TypeSettingsButtons(Enum):
-    EARLY_ACCESS = {"text": "Ранний доступ", "callback_data": "type:early_access"}
-    GAME = {"text": "Игра", "callback_data": "type:game"}
-    DLC = {"text": "DLC", "callback_data": "type:dlc"}
+    EARLY_ACCESS = {"text": "Ранний доступ", "callback_data": "toggle:type:early_access"}
+    GAME = {"text": "Игра", "callback_data": "toggle:type:game"}
+    DLC = {"text": "DLC", "callback_data": "toggle:type:dlc"}
 
 
 class DeviceSettingsButtons(Enum):
-    PC = {"text": "ПК", "callback_data": "device:pc"}
-    PS4 = {"text": "PS 4", "callback_data": "device:ps4"}
-    PS5 = {"text": "PS 5", "callback_data": "device:ps5"}
-    XBOX = {"text": "Xbox Series X/S", "callback_data": "device:xbox"}
-    XBOX_ONE = {"text": "Xbox One", "callback_data": "device:xbox_one"}
-    NINTENDO_SWITCH = {"text": "Nintendo Switch", "callback_data": "device:nintendo_switch"}
-    ANDROID = {"text": "Android", "callback_data": "device:android"}
-    IOS = {"text": "iOS", "callback_data": "device:ios"}
+    PC = {"text": "ПК", "callback_data": "toggle:device:pc"}
+    PS4 = {"text": "PS 4", "callback_data": "toggle:device:ps4"}
+    PS5 = {"text": "PS 5", "callback_data": "toggle:device:ps5"}
+    XBOX = {"text": "Xbox Series X/S", "callback_data": "toggle:device:xbox"}
+    XBOX_ONE = {"text": "Xbox One", "callback_data": "toggle:device:xbox_one"}
+    NINTENDO_SWITCH = {"text": "Nintendo Switch", "callback_data": "toggle:device:nintendo_switch"}
+    ANDROID = {"text": "Android", "callback_data": "toggle:device:android"}
+    IOS = {"text": "iOS", "callback_data": "toggle:device:ios"}
 
 
 class PlatformSettingsButtons(Enum):
-    STEAM = {"text": "Steam", "callback_data": "platform:steam"}
-    EPIC_GAMES = {"text": "Epic Games", "callback_data": "platform:epic_games"}
-    GOG = {"text": "GOG", "callback_data": "platform:gog"}
-    ITCHIO = {"text": "itch.io", "callback_data": "platform:itchio"}
+    STEAM = {"text": "Steam", "callback_data": "toggle:platform:steam"}
+    EPIC_GAMES = {"text": "Epic Games", "callback_data": "toggle:platform:epic_games"}
+    GOG = {"text": "GOG", "callback_data": "toggle:platform:gog"}
+    # ITCHIO = {"text": "itch.io", "callback_data": "toggle:platform:itchio"}
 
 
 SETTINGS ={
@@ -42,7 +42,7 @@ SETTINGS ={
         "steam": PlatformSettingsButtons.STEAM.value,
         "epic_games": PlatformSettingsButtons.EPIC_GAMES.value,
         "gog": PlatformSettingsButtons.GOG.value,
-        "itchio": PlatformSettingsButtons.ITCHIO.value
+        # "itchio": PlatformSettingsButtons.ITCHIO.value
     },
     "type" : {
         "early_access": TypeSettingsButtons.EARLY_ACCESS.value,

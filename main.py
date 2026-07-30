@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import logging
 import os
 import sys
@@ -11,6 +12,7 @@ from enums import DeviceSettingsButtons, MainMenuButtons, PlatformSettingsButton
 from services.parser import GamerPowerAPI
 from aiogram import F, Bot, Dispatcher, types
 from aiogram.filters import Command
+from sqlalchemy.orm.attributes import flag_modified
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -67,125 +69,158 @@ async def settings_cmd(message: types.Message):
 
 @dp.message(F.text == MainMenuButtons.CHECK.value)
 async def check_cmd(message: types.Message):
-    return await message.answer("Проверяю раздачи...", reply_markup=get_main_menu())
+    user_id = message.from_user.id
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user_settings = user.settings
+            else:
+                user_settings = {}
+
+    games = await GamerPowerAPI.get_giveaways()
+    if not games:
+        return await message.answer("На данный момент раздач нет. Попробуйте позже.", reply_markup=get_main_menu())
+
+    games_list = await get_giveaways_list(games=games, user_settings=user_settings, uid=user_id)
+    message_text = get_games_msg(games_dict=games_list)
+    if message_text is None:
+        return await message.answer("На данный момент раздач нет. Попробуйте позже.", reply_markup=get_main_menu())
+    
+    return await message.answer(text=message_text)
+
+
+@dp.message(F.text == SettingsButtons.BACK.value)
+async def back_cmd(message: types.Message):
+    await message.answer("Возвращаюсь в главное меню", reply_markup=get_main_menu())
 
 
 # ------------------- Settings/Device -------------------
 
 @dp.message(F.text == SettingsButtons.DEVICE.value)
 async def device_settings_cmd(message: types.Message):
+    user_id = message.from_user.id
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user_settings = user.settings
+            else:
+                user_settings = {}
+    
     return await message.answer("Выберите устройство", reply_markup=build_inline_settings_keyboard(
-        user_settings={}, 
+        user_settings=user_settings, 
         category="device", 
         adjust=[2, 2, 2, 2]
     ))
-
-
-@dp.callback_query(F.data == "device:pc")
-async def pc_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали ПК")
-
-
-@dp.callback_query(F.data == "device:ps4")
-async def ps4_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали PlayStation 4")
-
-
-@dp.callback_query(F.data == "device:ps5")
-async def ps5_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали PlayStation 5") 
-
-
-@dp.callback_query(F.data == "device:xbox")
-async def xbox_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Xbox Series X/S")
-
-
-@dp.callback_query(F.data == "device:xbox_one")
-async def xbox_one_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Xbox One")
-
-
-@dp.callback_query(F.data == "device:nintendo_switch")
-async def nintendo_switch_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Nintendo Switch")
-
-
-@dp.callback_query(F.data == "device:android")
-async def android_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Android")
-
-
-@dp.callback_query(F.data == "device:ios")
-async def ios_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали iOS")
-
 
 # ------------------- Settings/Platform -------------------
 
 @dp.message(F.text == SettingsButtons.PLATFORM.value)
 async def platform_settings_cmd(message: types.Message):
+    user_id = message.from_user.id
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user_settings = user.settings
+            else:
+                user_settings = {}
+    
     return await message.answer("Выберите платформу", reply_markup=build_inline_settings_keyboard(
-        user_settings={}, 
+        user_settings=user_settings, 
         category="platform", 
         adjust=[2, 2]
     ))    
-
-
-@dp.callback_query(F.data == "platform:steam")
-async def steam_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Steam")
-
-
-@dp.callback_query(F.data == "platform:epic_games")
-async def epic_games_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Epic Games")
-
-
-@dp.callback_query(F.data == "platform:gog")
-async def gog_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали GOG")
-
-
-@dp.callback_query(F.data == "platform:itchio")
-async def itchio_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Itch.io")
-
 
 # ------------------- Settings/Type -------------------
 
 @dp.message(F.text == SettingsButtons.TYPE.value)
 async def type_settings_cmd(message: types.Message):
+    user_id = message.from_user.id
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user_settings = user.settings
+            else:
+                user_settings = {}
+    
     return await message.answer("Выберите тип раздач", reply_markup=build_inline_settings_keyboard(
-        user_settings={}, 
+        user_settings=user_settings, 
         category="type", 
         adjust=[1, 1, 1]))
 
-
-@dp.callback_query(F.data == "type:early_access")
-async def early_access_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Ранний доступ")
-
-
-@dp.callback_query(F.data == "type:game")
-async def game_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали Игру")
-
-
-@dp.callback_query(F.data == "type:dlc")
-async def dlc_settings_cmd(callback: types.CallbackQuery):
-    return await callback.answer("Вы выбрали DLC")
-
 # --------------------------------------
 
-def get_giveaways_list(games):
+@dp.callback_query(F.data.startswith("toggle:"))
+async def handle_toggle(callback: types.CallbackQuery):
+    category, value = callback.data.split(":")[1:]  # Разделяем данные колбэка на категорию и значение
+
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, callback.from_user.id)
+            if user:
+                current_settings = user.settings.get(category, [])
+
+                if value in current_settings:
+                    current_settings.remove(value)
+                else:
+                    current_settings.append(value)
+
+                flag_modified(user, "settings")
+
+                # Обновляем настройки пользователя
+                user.settings[category] = current_settings
+                session.add(user)
+        await session.commit()
+
+    # Отправляем обновленную клавиатуру с учетом новых настроек
+    await callback.message.edit_reply_markup(
+        reply_markup=build_inline_settings_keyboard(
+            user_settings=user.settings,
+            category=category,
+            adjust=[2, 2] if category != "type" else [1, 1, 1]
+        )
+    )
+
+    return await callback.answer("Настройки обновлены")
+
+
+async def get_giveaways_list(games, user_settings: dict, uid: int):
+    user_platforms = user_settings.get("platform", [])
+    user_devices = user_settings.get("device", [])
+    user_types = user_settings.get("type", [])
+
     games_dict = {}
     for game in games:
         if not game["end_date"] or game["end_date"] == "N/A":
             continue
+
+        if user_platforms and not any(platform.lower() in game["platforms"].lower() for platform in user_platforms):
+            continue
+
+        if user_devices and not any(device.lower() in game["platforms"].lower() for device in user_devices):
+            continue
+
+        if user_types and game["type"].lower() not in [t.lower() for t in user_types]:
+            continue
+
+        async with async_session() as session:
+            async with session.begin():
+                sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
+                if sent_game:
+                    continue  # Если игра уже была отправлена пользователю, пропускаем ее
+
+                # Добавляем запись о том, что игра была отправлена пользователю
+                new_sent_game = SentGame(user_id=uid, game_id=game["id"])
+                session.add(new_sent_game)
+            await session.commit()
+
         games_dict[game["id"]] = {
             "title" : game["title"],
             "image" : game["image"],
+            "platforms" : game["platforms"],
             "end_date" : game["end_date"],
             "type" : game["type"],
             "open_giveaway_url" : game["open_giveaway_url"]
@@ -199,24 +234,36 @@ def get_games_msg(games_dict: dict):
     message = "Текущие раздачи: \n\n"
     for game in games_dict.values():
         num += 1
-        message += f"{num}. {game['title']} ({game['type']}) – {game['open_giveaway_url']} до {game['end_date']}\n\n"
+        message += f"{num}. <b>{game['title']}</b> ({game['type']}) – {game['open_giveaway_url']} до {game['end_date']} /// {game['platforms']}\n\n"
 
+    if num == 0:
+        message = None
     return message
 
 
 async def check_giveaways():
     while True:
-        games = await GamerPowerAPI.get_giveaways(platform="pc")
+        games = await GamerPowerAPI.get_giveaways()
         if not games:
             logger.info("New giveaways don't detected")
             await asyncio.sleep(40)  # Ждем 30 минут перед следующей проверкой 1800 sec
             continue
 
         user_ids = await get_active_users()
-        games_list = get_giveaways_list(games=games)
-        message = get_games_msg(games_dict=games_list)
 
         for uid in user_ids:
+            async with async_session() as session:
+                async with session.begin():
+                    user = await session.get(User, uid)
+                    if not user:
+                        continue  # Если пользователь не найден, пропускаем его
+                    
+            games_list = await get_giveaways_list(games=games, user_settings=user.settings, uid=uid)
+            message = get_games_msg(games_dict=games_list)
+            if message is None:
+                logger.info(f"No new giveaways for user {uid}")
+                continue  # Если нет новых раздач для пользователя, пропускаем его
+
             try:
                 await bot.send_message(
                     chat_id=uid,

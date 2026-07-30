@@ -1,7 +1,12 @@
+import logging
+
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from enums import SETTINGS, DeviceSettingsButtons, MainMenuButtons, PlatformSettingsButtons, SettingsButtons, TypeSettingsButtons
+
+
+logger = logging.getLogger(__name__)
 
 
 def build_reply_keyboard(list_of_buttons, adjust: list[int] = None, one_time_keyboard: bool = False):
@@ -31,6 +36,8 @@ def build_inline_settings_keyboard(user_settings: dict, category: str, adjust: l
 
     current_category_items = SETTINGS[category]  # Получаем словарь с кнопками для текущей категории
     user_choices = user_settings.get(category, [])  # Получаем список выбранных пользователем значений для текущей категории
+
+    logger.info(f"Building inline settings keyboard for category '{category}' with user choices: {user_choices}")
 
     for key, button in current_category_items.items():
         # Проверяем, выбрано ли текущее значение пользователем

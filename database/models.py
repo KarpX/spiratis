@@ -1,3 +1,7 @@
+from datetime import datetime
+
+from sqlalchemy import BigInteger, BigInteger, DateTime, Integer, func
+from sqlalchemy import func
 from sqlalchemy.orm import Mapped, mapped_column, Mapped
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -19,7 +23,10 @@ class User(Base):
 class SentGame(Base):
     __tablename__ = "sent_games"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column()
-    game_id: Mapped[int] = mapped_column()
-    sent_at: Mapped[str] = mapped_column()
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    game_id: Mapped[int] = mapped_column(Integer)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        server_default=func.now()
+    )
