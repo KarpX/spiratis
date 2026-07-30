@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from builders import build_inline_settings_keyboard, get_main_menu, get_settings, get_timezone_keyboard
 from database.session import async_session
 from database.models import User, SentGame
@@ -161,10 +161,10 @@ async def check_cmd(message: types.Message):
                     caption=message_text if i == 0 else "",
                     parse_mode="HTML") for i, photo in enumerate(photos)],
             )
-
-        await mark_games_as_sent(user_id=user_id, game_ids=list(games_list.keys()))
     except Exception as e:
         await message.answer("Произошла ошибка при отправке уведомлений. Попробуйте позже.", reply_markup=get_main_menu())
+
+    await mark_games_as_sent(user_id=user_id, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
 
 
 @dp.message(F.text == SettingsButtons.DEACTIVATE.value)
@@ -411,11 +411,16 @@ async def get_giveaways_list(games, user_settings: dict, uid: int):
     return games_dict
 
 
-async def mark_games_as_sent(user_id: int, game_ids: list):
+async def mark_games_as_sent(user_id: int, game_ids_with_dates: list):
     async with async_session() as session:
         async with session.begin():
-            for game_id in game_ids:
-                new_sent_game = SentGame(user_id=user_id, game_id=game_id)
+            for game_id, game_date in game_ids_with_dates:
+                try:
+                    date_end = datetime.strptime(game_date, "%Y-%m-%d %H:%M:%S")
+                except:
+                    date_end = None
+                
+                new_sent_game = SentGame(user_id=user_id, game_id=game_id, end_date=date_end)
                 session.add(new_sent_game)
         await session.commit()
 
@@ -454,6 +459,19 @@ def get_games_msg(games_dict: dict, user: User):
     return (message, photos)
 
 
+async def cleanup_old_sent_games():
+    logger.info("Cleaning up old sent games...")
+
+    threshold = datetime.now() - timedelta(days=1)
+    
+    async with async_session() as session:
+        async with session.begin():
+            query = delete(SentGame).where(SentGame.end_date < threshold)
+            result = await session.execute(query)
+            logger.info(f"Очистка завершена. Удалено записей: {result.rowcount}")
+        await session.commit()
+
+
 async def check_giveaways():
     while True:
         logger.info("Checking giveaways...")
@@ -486,16 +504,22 @@ async def check_giveaways():
                         parse_mode="HTML") for i, photo in enumerate(photos)],
                 )
 
-                await mark_games_as_sent(user_id=uid, game_ids=list(games_list.keys()))
             except Exception as e:
                 logger.error(f"Message has not sent: {e}")
                 pass # Тут можно помечать user.is_active = False если бот заблокирован
+
+            await mark_games_as_sent(user_id=uid, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
 
         await asyncio.sleep(3600)
 
 
 async def main():
+    scheduler = AsyncIOScheduler()
+
     asyncio.create_task(check_giveaways())
+
+    scheduler.add_job(cleanup_old_sent_games, CronTrigger(hour=6, minute=0))
+    scheduler.start()
 
     await dp.start_polling(bot)
     logger.info("Bot has been started working...")
