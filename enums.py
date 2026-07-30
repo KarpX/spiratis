@@ -10,6 +10,7 @@ class SettingsButtons(Enum):
     DEVICE = "📱 Устройство"
     PLATFORM = "🎮 Платформа"
     TYPE = "📁 Тип"
+    DEACTIVATE = "❌ Выключить"
     BACK = "🔙 Назад"
 
 

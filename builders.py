@@ -66,8 +66,15 @@ def get_settings():
         {"text": SettingsButtons.DEVICE.value},
         {"text": SettingsButtons.PLATFORM.value},
         {"text": SettingsButtons.TYPE.value},
+        {"text": SettingsButtons.DEACTIVATE.value},
         {"text": SettingsButtons.BACK.value}
-    ], adjust=[2, 2])
+    ], adjust=[2, 2, 1])
+
+
+def get_activate_btn():
+    return build_reply_keyboard([
+        {"text": "✅ Включить уведомления"}
+    ], adjust=[1])
 
 
 # def get_device_settings():

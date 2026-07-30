@@ -5,7 +5,7 @@ import os
 import sys
 
 from sqlalchemy import select
-from builders import build_inline_keyboard, build_inline_settings_keyboard, get_main_menu, get_settings
+from builders import build_inline_keyboard, build_inline_settings_keyboard, get_activate_btn, get_main_menu, get_settings
 from database.session import async_session
 from database.models import User, SentGame
 from enums import DeviceSettingsButtons, MainMenuButtons, PlatformSettingsButtons, SettingsButtons, TypeSettingsButtons
@@ -83,11 +83,48 @@ async def check_cmd(message: types.Message):
         return await message.answer("На данный момент раздач нет. Попробуйте позже.", reply_markup=get_main_menu())
 
     games_list = await get_giveaways_list(games=games, user_settings=user_settings, uid=user_id)
-    message_text = get_games_msg(games_dict=games_list)
+    message_text, photos = get_games_msg(games_dict=games_list)
     if message_text is None:
         return await message.answer("На данный момент раздач нет. Попробуйте позже.", reply_markup=get_main_menu())
-    
-    return await message.answer(text=message_text)
+
+    try:
+        await bot.send_media_group(
+                chat_id=user_id,
+                media=[types.InputMediaPhoto(media=photo, 
+                    caption=message_text if i == 0 else "",
+                    parse_mode="HTML") for i, photo in enumerate(photos)],
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при отправке медиа-группы: {e}")
+        await message.answer("Произошла ошибка при отправке уведомлений. Попробуйте позже.", reply_markup=get_main_menu())
+
+
+@dp.message(F.text == SettingsButtons.DEACTIVATE.value)
+async def deactivate_cmd(message: types.Message):
+    user_id = message.from_user.id
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user.is_active = False
+                session.add(user)
+        await session.commit()
+
+    return await message.answer("Уведомления отключены. Вы больше не будете получать уведомления о раздачах.", reply_markup=get_activate_btn())
+
+
+@dp.message(F.text == "✅ Включить уведомления")
+async def activate_cmd(message: types.Message):
+    user_id = message.from_user.id
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user.is_active = True
+                session.add(user)
+        await session.commit()
+
+    return await message.answer("Уведомления включены. Вы снова будете получать уведомления о раздачах.", reply_markup=get_main_menu())
 
 
 @dp.message(F.text == SettingsButtons.BACK.value)
@@ -215,7 +252,7 @@ async def get_giveaways_list(games, user_settings: dict, uid: int):
                 # Добавляем запись о том, что игра была отправлена пользователю
                 new_sent_game = SentGame(user_id=uid, game_id=game["id"])
                 session.add(new_sent_game)
-            await session.commit()
+                await session.commit()
 
         games_dict[game["id"]] = {
             "title" : game["title"],
@@ -231,14 +268,30 @@ async def get_giveaways_list(games, user_settings: dict, uid: int):
 def get_games_msg(games_dict: dict):
     num = 0
 
+    photos = []
     message = "Текущие раздачи: \n\n"
     for game in games_dict.values():
         num += 1
-        message += f"{num}. <b>{game['title']}</b> ({game['type']}) – {game['open_giveaway_url']} до {game['end_date']} /// {game['platforms']}\n\n"
+
+        title = game["title"]
+        platforms = game["platforms"]
+        g_type = game["type"]
+        image = game["image"]
+
+        if num <= 3:
+            photos.append(image)
+
+        message += (
+            f"{num}️. <b>{title}</b>\n"
+            f"Тип: <code>{g_type}</code> | {platforms}\n"
+            f"⏳ До: <b>{game['end_date']}</b>\n"
+            f"🔗 <a href='{game['open_giveaway_url']}'>ЗАБРАТЬ ИГРУ</a>\n\n"
+            f"───────────────────\n\n"
+        )
 
     if num == 0:
         message = None
-    return message
+    return (message, photos)
 
 
 async def check_giveaways():
@@ -259,19 +312,22 @@ async def check_giveaways():
                         continue  # Если пользователь не найден, пропускаем его
                     
             games_list = await get_giveaways_list(games=games, user_settings=user.settings, uid=uid)
-            message = get_games_msg(games_dict=games_list)
+            message, photos = get_games_msg(games_dict=games_list)
             if message is None:
                 logger.info(f"No new giveaways for user {uid}")
                 continue  # Если нет новых раздач для пользователя, пропускаем его
 
             try:
-                await bot.send_message(
+                await bot.send_media_group(
                     chat_id=uid,
-                    text=message
+                    media=[types.InputMediaPhoto(media=photo, 
+                        caption=message if i == 0 else "",
+                        parse_mode="HTML") for i, photo in enumerate(photos)],
                 )
             except Exception as e:
                 logger.error(f"Message has not sent: {e}")
                 pass # Тут можно помечать user.is_active = False если бот заблокирован
+
         await asyncio.sleep(40)
 
 async def main():
