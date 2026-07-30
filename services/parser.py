@@ -7,13 +7,18 @@ class GamerPowerAPI:
     BASE_URL = "https://www.gamerpower.com/api/giveaways"
 
     @classmethod
-    async def get_giveaways(cls, platform: str = "pc"):
+    async def get_giveaways(cls, platform: str = None, type: str = None):
         """
         Получает список раздач с GamerPower.
-        :param platform: Платформа (pc, steam, epic-games-store, ubisoft, origin)
+        :param platform: Платформа (pc, steam, epic-games-store)
+        :param type: Тип раздачи
         :return: Список словарей с данными о играх или None в случае ошибки
         """
-        params = {"platform": platform}
+        params = {"sort-by": "popularity"}
+        if platform is not None:
+            params["platform"] = platform
+        if type is not None:
+            params["type"] = type
         
         try:
             # Используем тайм-аут 10 секунд, чтобы бот не завис, если API тормозит
