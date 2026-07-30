@@ -19,7 +19,7 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          passphrase: ${{ secrets.PASSPHRASE }}
+          port: ${{ secrets.PORT }}
           script: |
             cd /root/spiratis  # Путь к папке бота на сервере
             git pull origin main
