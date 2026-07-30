@@ -59,15 +59,61 @@ async def get_sent_game_to_user(user_id: int, game_id: int):
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
     await add_user_if_not_exists(message.from_user.id)
-    await message.answer(text=(
+    text=(
         "🎮 <b>Добро пожаловать в Spiratis!</b> 🎮\n\n"
-        "Я твой личный охотник за игровой халявой. Я каждый день буду присылать список <b>бесплатных</b> игр, "
-        "DLC или продуктов в раннем доступе\n\n"
-        "🚀 Нажми кнопку <b>🔍 Проверить</b>, чтобы увидеть текущие раздачи.\n\n"
-        "В ⚙️ Настройках можно выбрать тип продуктов, платформы и устройства, указать часовой пояс, отключить ежедневные уведомления бота"
+        "Я помогу тебе не пропустить бесплатные игры. Давай настроим фильтры, "
+        "чтобы ты получал только то, что тебе интересно.\n\n"
+        "Начнем с выбора <b>устройств</b>!"
     )
-        , reply_markup=get_main_menu(),
-        parse_mode="HTML")
+    
+    async with async_session() as session:
+        user = await session.get(User, message.from_user.id)
+        settings = user.settings if user else {}
+        
+    await message.answer(
+        text=text,
+        reply_markup=build_inline_settings_keyboard(settings, "device", [2, 2], next_step="platform"),
+        parse_mode="HTML"
+    )
+
+
+@dp.callback_query(F.data.startswith("next_step:"))
+async def handle_next_step(callback: types.CallbackQuery):
+    step = callback.data.split(":")[1]
+    
+    async with async_session() as session:
+        user = await session.get(User, callback.from_user.id)
+        settings = user.settings
+
+    if step == "platform":
+        await callback.message.edit_text(
+            "🔌 Теперь выбери <b>платформы</b>:",
+            reply_markup=build_inline_settings_keyboard(settings, "platform", [2, 2], next_step="type"),
+            parse_mode="HTML"
+        )
+    
+    elif step == "type":
+        await callback.message.edit_text(
+            "📦 Какой <b>тип раздач</b> тебя интересует?",
+            reply_markup=build_inline_settings_keyboard(settings, "type", [1], next_step="timezone"),
+            parse_mode="HTML"
+        )
+    
+    elif step == "timezone":
+        await callback.message.edit_text(
+            "🕒 И последнее — твой <b>часовой пояс</b>, чтобы время окончания раздач было верным:",
+            reply_markup=get_timezone_keyboard(user.timezone_offset, True),
+            parse_mode="HTML",
+        )
+
+    elif step == "finish":
+        await callback.message.edit_text(
+        f"Поздравляю, настройка окончена! Ты всегда можешь изменить настройки по кнопке <b>{MainMenuButtons.SETTINGS.value}</b> и выключить автоматические уведомления",
+        reply_markup=get_main_menu(),
+        parse_mode="HTML",
+        )
+    
+    await callback.answer()
 
 
 @dp.message(F.text == MainMenuButtons.SETTINGS.value)
@@ -115,8 +161,9 @@ async def check_cmd(message: types.Message):
                     caption=message_text if i == 0 else "",
                     parse_mode="HTML") for i, photo in enumerate(photos)],
             )
+
+        await mark_games_as_sent(user_id=user_id, game_ids=list(games_list.keys()))
     except Exception as e:
-        logger.error(f"Ошибка при отправке медиа-группы: {e}")
         await message.answer("Произошла ошибка при отправке уведомлений. Попробуйте позже.", reply_markup=get_main_menu())
 
 
@@ -239,12 +286,16 @@ async def handle_toggle(callback: types.CallbackQuery):
                 session.add(user)
         await session.commit()
 
+    next_steps = {"device": "platform", "platform": "type", "type": "timezone", "timezone" : "finish"}
+    current_next_step = next_steps.get(category)
+
     # Отправляем обновленную клавиатуру с учетом новых настроек
     await callback.message.edit_reply_markup(
         reply_markup=build_inline_settings_keyboard(
             user_settings=user.settings,
             category=category,
-            adjust=[2, 2] if category != "type" else [1, 1, 1]
+            adjust=[2, 2] if category != "type" else [1, 1, 1],
+            next_step=current_next_step
         )
     )
 
@@ -264,18 +315,19 @@ async def timezone_settings(message: types.Message):
 
 @dp.callback_query(F.data.startswith("shift_tz:"))
 async def shift_timezone(callback: types.CallbackQuery):
-    new_start = int(callback.data.split(":")[1])
+    _, new_start, is_setup = callback.data.split(":")
     
     # Просто обновляем клавиатуру на новую страницу
     await callback.message.edit_reply_markup(
-        reply_markup=get_timezone_keyboard(new_start)
+        reply_markup=get_timezone_keyboard(int(new_start), is_setup=(is_setup == "1"))
     )
     await callback.answer()
 
 
 @dp.callback_query(F.data.startswith("set_tz:"))
 async def set_timezone(callback: types.CallbackQuery):
-    selected_tz = int(callback.data.split(":")[1])
+    _, selected_tz, is_setup = callback.data.split(":")
+    selected_tz = int(selected_tz)
     
     async with async_session() as session:
         user = await session.get(User, callback.from_user.id)
@@ -283,15 +335,24 @@ async def set_timezone(callback: types.CallbackQuery):
         await session.commit()
         
     await callback.answer(f"✅ Часовой пояс установлен: UTC{'+' if selected_tz > 0 else ''}{selected_tz}")
-    
-    # Можно отредактировать текст сообщения, подтвердив выбор
-    await callback.message.edit_text(
-        f"✅ <b>Настройки сохранены!</b>\n\n"
-        f"Ваш часовой пояс: <code>UTC {selected_tz:+}</code>\n"
-        f"Теперь время завершения раздач будет отображаться корректно для вашего региона.",
-        reply_markup=None,
-        parse_mode="HTML"
-    )
+
+    if is_setup == "1":
+        await callback.message.delete()
+        await callback.message.answer(
+            f"🥳 <b>Поздравляю, настройка окончена!</b>\n\n"
+            f"Ты всегда можешь изменить параметры по кнопке <b>{MainMenuButtons.SETTINGS.value}</b>.\n"
+            f"Удачной охоты за играми! 🕹",
+            reply_markup=get_main_menu(),
+            parse_mode="HTML"
+        )
+    else:
+        await callback.message.edit_text(
+            f"✅ <b>Настройки сохранены!</b>\n\n"
+            f"Ваш часовой пояс: <code>UTC {selected_tz:+}</code>\n"
+            f"Теперь время завершения раздач будет отображаться корректно для вашего региона.",
+            reply_markup=None,
+            parse_mode="HTML"
+        )
 
 
 def format_date_for_user(api_date_str: str, user_offset: int) -> str:
@@ -335,16 +396,9 @@ async def get_giveaways_list(games, user_settings: dict, uid: int):
         if user_types and game["type"].lower() not in [t.lower() for t in user_types]:
             continue
 
-        async with async_session() as session:
-            async with session.begin():
-                sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
-                if sent_game:
-                    continue  # Если игра уже была отправлена пользователю, пропускаем ее
-
-                # Добавляем запись о том, что игра была отправлена пользователю
-                new_sent_game = SentGame(user_id=uid, game_id=game["id"])
-                session.add(new_sent_game)
-                await session.commit()
+        sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
+        if sent_game:
+            continue  # Если игра уже была отправлена пользователю, пропускаем ее
 
         games_dict[game["id"]] = {
             "title" : game["title"],
@@ -355,6 +409,15 @@ async def get_giveaways_list(games, user_settings: dict, uid: int):
             "open_giveaway_url" : game["open_giveaway_url"]
         }
     return games_dict
+
+
+async def mark_games_as_sent(user_id: int, game_ids: list):
+    async with async_session() as session:
+        async with session.begin():
+            for game_id in game_ids:
+                new_sent_game = SentGame(user_id=user_id, game_id=game_id)
+                session.add(new_sent_game)
+        await session.commit()
 
 
 def get_games_msg(games_dict: dict, user: User):
@@ -391,48 +454,48 @@ def get_games_msg(games_dict: dict, user: User):
     return (message, photos)
 
 
-async def daily_check_giveaways():
-    logger.info("Starting daily message...")
-    games = await GamerPowerAPI.get_giveaways()
-    if not games:
-        logger.info("New giveaways don't detected")
-        return
+async def check_giveaways():
+    while True:
+        logger.info("Checking giveaways...")
+        games = await GamerPowerAPI.get_giveaways()
+        if not games:
+            logger.info("New giveaways don't detected")
+            await asyncio.sleep(3600)
+            return
 
-    user_ids = await get_active_users()
+        user_ids = await get_active_users()
 
-    for uid in user_ids:
-        async with async_session() as session:
-            async with session.begin():
-                user = await session.get(User, uid)
-                if not user:
-                    continue  # Если пользователь не найден, пропускаем его
-                
-        games_list = await get_giveaways_list(games=games, user_settings=user.settings, uid=uid)
-        message, photos = get_games_msg(games_dict=games_list, user=user)
-        if message is None:
-            logger.info(f"No new giveaways for user {uid}")
-            continue  # Если нет новых раздач для пользователя, пропускаем его
+        for uid in user_ids:
+            async with async_session() as session:
+                async with session.begin():
+                    user = await session.get(User, uid)
+                    if not user:
+                        continue  # Если пользователь не найден, пропускаем его
+                    
+            games_list = await get_giveaways_list(games=games, user_settings=user.settings, uid=uid)
+            message, photos = get_games_msg(games_dict=games_list, user=user)
+            if message is None:
+                logger.info(f"No new giveaways for user {uid}")
+                continue  # Если нет новых раздач для пользователя, пропускаем его
 
-        try:
-            await bot.send_media_group(
-                chat_id=uid,
-                media=[types.InputMediaPhoto(media=photo, 
-                    caption=message if i == 0 else "",
-                    parse_mode="HTML") for i, photo in enumerate(photos)],
-            )
-        except Exception as e:
-            logger.error(f"Message has not sent: {e}")
-            pass # Тут можно помечать user.is_active = False если бот заблокирован
+            try:
+                await bot.send_media_group(
+                    chat_id=uid,
+                    media=[types.InputMediaPhoto(media=photo, 
+                        caption=message if i == 0 else "",
+                        parse_mode="HTML") for i, photo in enumerate(photos)],
+                )
+
+                await mark_games_as_sent(user_id=uid, game_ids=list(games_list.keys()))
+            except Exception as e:
+                logger.error(f"Message has not sent: {e}")
+                pass # Тут можно помечать user.is_active = False если бот заблокирован
+
+        await asyncio.sleep(3600)
 
 
 async def main():
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        daily_check_giveaways,
-        trigger=CronTrigger(hour=12, minute=0, second=0),
-        name="daily_giveaways_check"
-    )
-    scheduler.start()
+    asyncio.create_task(check_giveaways())
 
     await dp.start_polling(bot)
     logger.info("Bot has been started working...")
