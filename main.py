@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from builders import build_inline_settings_keyboard, get_main_menu, get_settings, get_timezone_keyboard
 from database.session import async_session
 from database.models import User, SentGame
-from enums import MainMenuButtons, SettingsButtons
+from enums import MAPPING, SETTINGS, MainMenuButtons, SettingsButtons
 from services.parser import GamerPowerAPI
 from aiogram import F, Bot, Dispatcher, types
 from aiogram.filters import Command
@@ -72,7 +72,7 @@ async def start_cmd(message: types.Message):
         
     await message.answer(
         text=text,
-        reply_markup=build_inline_settings_keyboard(settings, "device", [2, 2], next_step="platform"),
+        reply_markup=build_inline_settings_keyboard(settings, "device", [2, 2], next_step="platform", is_setup=True),
         parse_mode="HTML"
     )
 
@@ -88,14 +88,14 @@ async def handle_next_step(callback: types.CallbackQuery):
     if step == "platform":
         await callback.message.edit_text(
             "🔌 Теперь выбери <b>платформы</b>:",
-            reply_markup=build_inline_settings_keyboard(settings, "platform", [2, 2], next_step="type"),
+            reply_markup=build_inline_settings_keyboard(settings, "platform", [2, 2], next_step="type", is_setup=True),
             parse_mode="HTML"
         )
     
     elif step == "type":
         await callback.message.edit_text(
             "📦 Какой <b>тип раздач</b> тебя интересует?",
-            reply_markup=build_inline_settings_keyboard(settings, "type", [1], next_step="timezone"),
+            reply_markup=build_inline_settings_keyboard(settings, "type", [1], next_step="timezone", is_setup=True),
             parse_mode="HTML"
         )
     
@@ -150,21 +150,11 @@ async def check_cmd(message: types.Message):
         return await message.answer("На данный момент новых раздач нет. Попробуйте позже.", reply_markup=get_main_menu())
 
     games_list = await get_giveaways_list(games=games, user_settings=user_settings, uid=user_id)
-    message_text, photos = get_games_msg(games_dict=games_list, user=user)
-    if message_text is None:
-        return await message.answer("На данный момент новых раздач нет. Попробуйте позже.", reply_markup=get_main_menu())
-
-    try:
-        await bot.send_media_group(
-                chat_id=user_id,
-                media=[types.InputMediaPhoto(media=photo, 
-                    caption=message_text if i == 0 else "",
-                    parse_mode="HTML") for i, photo in enumerate(photos)],
-            )
-    except Exception as e:
-        await message.answer("Произошла ошибка при отправке уведомлений. Попробуйте позже.", reply_markup=get_main_menu())
-
-    await mark_games_as_sent(user_id=user_id, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
+    if games_list:
+        await send_giveaways_to_user(bot=bot, uid=user_id, user=user, games_dict=games_list)
+        await mark_games_as_sent(user_id=user_id, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
+    else:
+        await message.answer("На данный момент новых раздач нет. Попробуйте позже.")
 
 
 @dp.message(F.text == SettingsButtons.DEACTIVATE.value)
@@ -266,7 +256,8 @@ async def type_settings_cmd(message: types.Message):
 
 @dp.callback_query(F.data.startswith("toggle:"))
 async def handle_toggle(callback: types.CallbackQuery):
-    category, value = callback.data.split(":")[1:]  # Разделяем данные колбэка на категорию и значение
+    category, value, is_setup = callback.data.split(":")[1:]  # Разделяем данные колбэка на категорию и значение
+    is_setup = is_setup == "1"
 
     async with async_session() as session:
         async with session.begin():
@@ -295,7 +286,8 @@ async def handle_toggle(callback: types.CallbackQuery):
             user_settings=user.settings,
             category=category,
             adjust=[2, 2] if category != "type" else [1, 1, 1],
-            next_step=current_next_step
+            next_step=current_next_step,
+            is_setup=is_setup
         )
     )
 
@@ -378,36 +370,75 @@ def format_date_for_user(api_date_str: str, user_offset: int) -> str:
 
 
 async def get_giveaways_list(games, user_settings: dict, uid: int):
-    user_platforms = user_settings.get("platform", [])
-    user_devices = user_settings.get("device", [])
-    user_types = user_settings.get("type", [])
+    u_platforms = user_settings.get("platform", [])
+    u_devices = user_settings.get("device", [])
+    u_types = [t.lower() for t in user_settings.get("type", [])]
+
+    all_known_stores = [s.lower() for s in MAPPING["platform"].values()]
 
     games_dict = {}
+    
     for game in games:
         if not game["end_date"] or game["end_date"] == "N/A":
             continue
 
-        if user_platforms and not any(platform.lower() in game["platforms"].lower() for platform in user_platforms):
+        api_platforms_str = game["platforms"].lower()
+        api_type_str = game["type"].lower()
+
+        if u_types and api_type_str not in u_types:
             continue
 
-        if user_devices and not any(device.lower() in game["platforms"].lower() for device in user_devices):
+        passed = False
+
+        if not u_platforms and not u_devices:
+            passed = True
+        else:
+            game_stores = [s for s in all_known_stores if s in api_platforms_str]
+            
+            match_device = False
+            if u_devices:
+                device_search_terms = [MAPPING["device"].get(d, d) for d in u_devices]
+                match_device = any(term in api_platforms_str for term in device_search_terms)
+
+            match_platform = False
+            if u_platforms:
+                platform_search_terms = [MAPPING["platform"].get(p, p) for p in u_platforms]
+                match_platform = any(term in api_platforms_str for term in platform_search_terms)
+
+            # --- ЛОГИКА ПРИНЯТИЯ РЕШЕНИЯ ---
+            
+            if game_stores:
+                # Если это игра из магазина (Steam, Epic и т.д.)
+                if u_platforms:
+                    # Если пользователь указал конкретные магазины — показываем только их
+                    # Игнорируем совпадение по "PC", если магазин не тот
+                    passed = match_platform
+                else:
+                    # Если пользователь НЕ выбирал магазины, но выбрал девайсы (например PC)
+                    # Показываем все магазины для этого девайса
+                    passed = match_device
+            else:
+                # Если у игры нет тега магазина (например, просто "Android" или "DRM-Free")
+                # Используем логику "ИЛИ" (подошел или девайс, или платформа)
+                passed = match_device or match_platform
+
+        if not passed:
             continue
 
-        if user_types and game["type"].lower() not in [t.lower() for t in user_types]:
-            continue
-
-        sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
-        if sent_game:
-            continue  # Если игра уже была отправлена пользователю, пропускаем ее
+        async with async_session() as session:
+            sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
+            if sent_game:
+                continue
 
         games_dict[game["id"]] = {
-            "title" : game["title"],
-            "image" : game["image"],
-            "platforms" : game["platforms"],
-            "end_date" : game["end_date"],
-            "type" : game["type"],
-            "open_giveaway_url" : game["open_giveaway_url"]
+            "title": game["title"],
+            "image": game["image"],
+            "platforms": game["platforms"],
+            "end_date": game["end_date"],
+            "type": game["type"],
+            "open_giveaway_url": game["open_giveaway_url"]
         }
+        
     return games_dict
 
 
@@ -425,13 +456,13 @@ async def mark_games_as_sent(user_id: int, game_ids_with_dates: list):
         await session.commit()
 
 
-def get_games_msg(games_dict: dict, user: User):
-    num = 0
+def get_games_msg(games_dict: dict, user: User, current_num: int = 0):
+    num = current_num
 
     photos = []
     message = "🎁 <b>АКТУАЛЬНЫЕ РАЗДАЧИ ИГР</b> 🎁\n" 
-    message += "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n\n"
-    for game in games_dict.values():
+    message += "⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n\n"
+    for game in games_dict:
         num += 1
 
         title = game["title"]
@@ -443,20 +474,57 @@ def get_games_msg(games_dict: dict, user: User):
         api_time = game['end_date']
         user_time = format_date_for_user(api_time, user.timezone_offset)
 
-        if num <= 3:
-            photos.append(image)
+        photos.append(image)
 
         message += (
             f"{num}️. <b>{title}</b>\n"
             f"Тип: <code>{g_type}</code> | {platforms}\n"
             f"⏳ До: <b>{user_time}</b>\n"
             f"🔗 <a href='{game_link}'>ЗАБРАТЬ ИГРУ</a>\n\n"
-            f"───────────────────\n\n"
+            f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n\n"
         )
+
+    logger.info(message)
 
     if num == 0:
         message = None
     return (message, photos)
+
+
+async def send_giveaways_to_user(bot: Bot, uid: int, user: User, games_dict: dict):
+    if not games_dict:
+        return
+
+    all_games = list(games_dict.values())
+    
+    current_num = 0
+    for chunk in chunk_list(all_games, 5):
+        message_text, photos = get_games_msg(chunk, user, current_num)
+        current_num += len(chunk)
+
+        try:
+            if len(photos) > 1:
+                await bot.send_media_group(
+                    chat_id=uid,
+                    media=[types.InputMediaPhoto(
+                        media=photo, 
+                        caption=message_text if i == 0 else "",
+                        parse_mode="HTML"
+                    ) for i, photo in enumerate(photos)]
+                )
+            else:
+                await bot.send_photo(
+                    chat_id=uid,
+                    photo=photos[0],
+                    caption=message_text,
+                    parse_mode="HTML"
+                )
+            await asyncio.sleep(0.5) 
+            
+        except Exception as e:
+            logger.error(f"Ошибка отправки пачки игр пользователю {uid}: {e}")
+            if "ENTITY_BOUNDS_INVALID" in str(e) or "too long" in str(e).lower():
+                 await bot.send_message(uid, message_text, parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def cleanup_old_sent_games():
@@ -470,6 +538,12 @@ async def cleanup_old_sent_games():
             result = await session.execute(query)
             logger.info(f"Очистка завершена. Удалено записей: {result.rowcount}")
         await session.commit()
+
+
+def chunk_list(lst, n):
+    """Разбивает список на части по n элементов."""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
 
 
 async def check_giveaways():
@@ -491,24 +565,9 @@ async def check_giveaways():
                         continue  # Если пользователь не найден, пропускаем его
                     
             games_list = await get_giveaways_list(games=games, user_settings=user.settings, uid=uid)
-            message, photos = get_games_msg(games_dict=games_list, user=user)
-            if message is None:
-                logger.info(f"No new giveaways for user {uid}")
-                continue  # Если нет новых раздач для пользователя, пропускаем его
-
-            try:
-                await bot.send_media_group(
-                    chat_id=uid,
-                    media=[types.InputMediaPhoto(media=photo, 
-                        caption=message if i == 0 else "",
-                        parse_mode="HTML") for i, photo in enumerate(photos)],
-                )
-
-            except Exception as e:
-                logger.error(f"Message has not sent: {e}")
-                pass # Тут можно помечать user.is_active = False если бот заблокирован
-
-            await mark_games_as_sent(user_id=uid, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
+            if games_list:
+                await send_giveaways_to_user(bot=bot, uid=uid, user=user, games_dict=games_list)
+                await mark_games_as_sent(user_id=uid, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
 
         await asyncio.sleep(3600)
 

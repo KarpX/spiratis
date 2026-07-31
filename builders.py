@@ -26,20 +26,21 @@ def build_inline_keyboard(list_of_buttons, adjust: list[int] = None):
     return inline_builder.as_markup()
 
 
-def build_inline_settings_keyboard(user_settings: dict, category: str, adjust: list[int] = None, next_step: str = None):
+def build_inline_settings_keyboard(user_settings: dict, category: str, adjust: list[int] = None, is_setup: bool = False, next_step: str = None):
     inline_builder = InlineKeyboardBuilder()
 
     current_category_items = SETTINGS[category]  # Получаем словарь с кнопками для текущей категории
     user_choices = user_settings.get(category, [])  # Получаем список выбранных пользователем значений для текущей категории
+    setup_flag = 1 if is_setup else 0
 
     for key, button in current_category_items.items():
         # Проверяем, выбрано ли текущее значение пользователем
         if key in user_choices:
-            inline_builder.button(text=f"✅ {button['text']}", callback_data=button["callback_data"])
+            inline_builder.button(text=f"✅ {button['text']}", callback_data=button["callback_data"]+f":{setup_flag}")
         else:
-            inline_builder.button(text=f"❌ {button['text']}", callback_data=button["callback_data"])
+            inline_builder.button(text=f"❌ {button['text']}", callback_data=button["callback_data"]+f":{setup_flag}")
 
-    if next_step:
+    if next_step and is_setup:
         inline_builder.row(InlineKeyboardButton(
             text="Далее ➡️",
             callback_data=f"next_step:{next_step}")

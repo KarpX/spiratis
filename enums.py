@@ -63,3 +63,23 @@ SETTINGS = {
         "ios": DeviceSettingsButtons.IOS.value
     }
 }
+
+MAPPING = {
+    "device": {
+        "pc": "pc",
+        "android": "android",
+        "ios": "ios",
+        "ps4": "ps4",
+        "ps5": "ps5",
+        "xbox_one": "xbox-one",
+        "xbox": "xbox-series-xs",
+        "nintendo_switch": "switch"
+    },
+    "platform": {
+        "steam": "steam",
+        "epic-games": "epic games store",
+        "gog": "gog",
+        "itch.io" : "itch.io",
+        "drm-free" : "DRM-Free"
+    }
+}
