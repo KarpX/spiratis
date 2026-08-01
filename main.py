@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 
+from aiogram.exceptions import TelegramForbiddenError, TelegramNotFound
 from sqlalchemy import delete, select
 from builders import build_inline_settings_keyboard, get_main_menu, get_settings, get_timezone_keyboard
 from database.session import async_session
@@ -54,6 +55,15 @@ async def get_sent_game_to_user(user_id: int, game_id: int):
             )
         )
         return result.scalars().first()
+
+
+async def set_user_inactive(user_id: int):
+    async with async_session() as session:
+        async with session.begin():
+            user = await session.get(User, user_id)
+            if user:
+                user.is_active = False
+        await session.commit()
 
 
 @dp.message(Command("start"))
@@ -484,8 +494,6 @@ def get_games_msg(games_dict: dict, user: User, current_num: int = 0):
             f"⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯\n\n"
         )
 
-    logger.info(message)
-
     if num == 0:
         message = None
     return (message, photos)
@@ -520,7 +528,15 @@ async def send_giveaways_to_user(bot: Bot, uid: int, user: User, games_dict: dic
                     parse_mode="HTML"
                 )
             await asyncio.sleep(0.5) 
-            
+
+        except TelegramForbiddenError:
+            logger.info(f"Пользователь {uid} заблокировал бота")
+            await set_user_inactive(uid)
+
+        except TelegramNotFound:
+            logger.warning(f"Чат с пользователем {uid} не найден. Деактивация...")
+            await set_user_inactive(uid)
+        
         except Exception as e:
             logger.error(f"Ошибка отправки пачки игр пользователю {uid}: {e}")
             if "ENTITY_BOUNDS_INVALID" in str(e) or "too long" in str(e).lower():
