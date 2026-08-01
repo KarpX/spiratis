@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 
-from aiogram.exceptions import TelegramForbiddenError, TelegramNotFound
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramNotFound
 from sqlalchemy import delete, select
 from builders import build_inline_settings_keyboard, get_main_menu, get_settings, get_timezone_keyboard
 from database.session import async_session
@@ -58,11 +58,15 @@ async def get_sent_game_to_user(user_id: int, game_id: int):
 
 
 async def set_user_inactive(user_id: int):
+    logger.info(f"Setting user {user_id} as inactive...")
     async with async_session() as session:
         async with session.begin():
             user = await session.get(User, user_id)
             if user:
                 user.is_active = False
+                await session.execute(
+                    delete(SentGame).where(SentGame.user_id == user_id)
+                )
         await session.commit()
 
 
@@ -161,8 +165,9 @@ async def check_cmd(message: types.Message):
 
     games_list = await get_giveaways_list(games=games, user_settings=user_settings, uid=user_id)
     if games_list:
-        await send_giveaways_to_user(bot=bot, uid=user_id, user=user, games_dict=games_list)
-        await mark_games_as_sent(user_id=user_id, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
+        sent_games = await send_giveaways_to_user(bot=bot, uid=user_id, user=user, games_dict=games_list)
+        if sent_games:
+            await mark_games_as_sent(user_id=user_id, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in sent_games])
     else:
         await message.answer("На данный момент новых раздач нет. Попробуйте позже.")
 
@@ -435,12 +440,12 @@ async def get_giveaways_list(games, user_settings: dict, uid: int):
         if not passed:
             continue
 
-        async with async_session() as session:
-            sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
-            if sent_game:
-                continue
+        sent_game = await get_sent_game_to_user(user_id=uid, game_id=game["id"])
+        if sent_game:
+            continue
 
         games_dict[game["id"]] = {
+            "id": game["id"],
             "title": game["title"],
             "image": game["image"],
             "platforms": game["platforms"],
@@ -504,6 +509,7 @@ async def send_giveaways_to_user(bot: Bot, uid: int, user: User, games_dict: dic
         return
 
     all_games = list(games_dict.values())
+    sent_games = []
     
     current_num = 0
     for chunk in chunk_list(all_games, 5):
@@ -527,20 +533,33 @@ async def send_giveaways_to_user(bot: Bot, uid: int, user: User, games_dict: dic
                     caption=message_text,
                     parse_mode="HTML"
                 )
+
+            sent_games.extend([game["id"] for game in chunk])
             await asyncio.sleep(0.5) 
 
         except TelegramForbiddenError:
             logger.info(f"Пользователь {uid} заблокировал бота")
             await set_user_inactive(uid)
+            return sent_games
 
         except TelegramNotFound:
             logger.warning(f"Чат с пользователем {uid} не найден. Деактивация...")
             await set_user_inactive(uid)
+            return sent_games
+
+        except TelegramBadRequest as e:
+            if "USER_IS_BLOCKED" in str(e) or "chat not found" in str(e).lower():
+                logger.info(f"Пользователь {uid} заблокировал бота (обнаружено в BadRequest).")
+                await set_user_inactive(uid)
+                return sent_games
         
         except Exception as e:
             logger.error(f"Ошибка отправки пачки игр пользователю {uid}: {e}")
             if "ENTITY_BOUNDS_INVALID" in str(e) or "too long" in str(e).lower():
-                 await bot.send_message(uid, message_text, parse_mode="HTML", disable_web_page_preview=True)
+                await bot.send_message(uid, message_text, parse_mode="HTML", disable_web_page_preview=True)
+                sent_games.extend([game["id"] for game in chunk])
+
+    return sent_games
 
 
 async def cleanup_old_sent_games():
@@ -582,8 +601,9 @@ async def check_giveaways():
                     
             games_list = await get_giveaways_list(games=games, user_settings=user.settings, uid=uid)
             if games_list:
-                await send_giveaways_to_user(bot=bot, uid=uid, user=user, games_dict=games_list)
-                await mark_games_as_sent(user_id=uid, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in games_list.keys()])
+                sent_games = await send_giveaways_to_user(bot=bot, uid=uid, user=user, games_dict=games_list)
+                if sent_games:
+                    await mark_games_as_sent(user_id=uid, game_ids_with_dates=[(game, games_list[game]['end_date']) for game in sent_games])
 
         await asyncio.sleep(3600)
 

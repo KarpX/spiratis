@@ -77,7 +77,7 @@ MAPPING = {
     },
     "platform": {
         "steam": "steam",
-        "epic-games": "epic games store",
+        "epic_games": "epic games store",
         "gog": "gog",
         "itch.io" : "itch.io",
         "drm-free" : "DRM-Free"
