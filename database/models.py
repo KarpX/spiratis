@@ -11,14 +11,14 @@ from database.base import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     settings: Mapped[dict] = mapped_column(JSONB, default=lambda: {
         "platform": [], 
         "type": [], 
         "device": []
     })
     is_active: Mapped[bool] = mapped_column(default=True)
-    timezone_offset: Mapped[int] = mapped_column(default=0)
+    timezone_offset: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class SentGame(Base):
