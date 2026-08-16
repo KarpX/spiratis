@@ -129,7 +129,7 @@ async def handle_next_step(callback: types.CallbackQuery):
     
     await callback.answer()
 
-
+@dp.message(Command("settings"))
 @dp.message(F.text == MainMenuButtons.SETTINGS.value)
 async def settings_cmd(message: types.Message):
     user_id = message.from_user.id
@@ -147,7 +147,7 @@ async def settings_cmd(message: types.Message):
     reply_markup=get_settings(user.is_active),
     parse_mode="HTML")
 
-
+@dp.message(Command("check"))
 @dp.message(F.text == MainMenuButtons.CHECK.value)
 async def check_cmd(message: types.Message):
     user_id = message.from_user.id
@@ -171,7 +171,7 @@ async def check_cmd(message: types.Message):
     else:
         await message.answer("На данный момент новых раздач нет. Попробуйте позже.")
 
-
+@dp.message(Command("deactivate"))
 @dp.message(F.text == SettingsButtons.DEACTIVATE.value)
 async def deactivate_cmd(message: types.Message):
     user_id = message.from_user.id
