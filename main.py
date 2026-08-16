@@ -188,7 +188,7 @@ async def deactivate_cmd(message: types.Message):
         reply_markup=get_settings(user.is_active),
         parse_mode="HTML")
 
-
+@dp.message(Command("activate"))
 @dp.message(F.text == SettingsButtons.ACTIVATE.value)
 async def activate_cmd(message: types.Message):
     user_id = message.from_user.id
