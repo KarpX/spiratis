@@ -588,7 +588,7 @@ async def check_giveaways():
         if not games:
             logger.info("New giveaways don't detected")
             await asyncio.sleep(3600)
-            return
+            continue
 
         user_ids = await get_active_users()
 
@@ -616,8 +616,8 @@ async def main():
     scheduler.add_job(cleanup_old_sent_games, CronTrigger(hour=6, minute=0))
     scheduler.start()
 
-    await dp.start_polling(bot)
     logger.info("Bot has been started working...")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
